@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Functional Chess Game</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .board-container {
+            width: 480px;
+            height: 480px;
+            max-width: 90vw;
+            max-height: 90vw;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            background: white;
+            border-radius: 4px;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            overflow: hidden;
+        }
+        .square {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            user-select: none;
+            cursor: pointer;
+            position: relative;
+        }
+        .light { background-color: #f0d9b5; }
+        .dark { background-color: #b58863; }
+        .selected { background-color: #7ab874 !important; }
+        .dot {
+            width: 12px;
+            height: 12px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+        }
+        .eval-bar {
+            width: 480px;
+            max-width: 90vw;
+            height: 24px;
+            background-color: #222;
+            margin-top: 15px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            display: flex;
+            overflow: hidden;
+        }
+        .eval-inner {
+            width: 50%;
+            height: 100%;
+            background-color: #fff;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <h2 id="status">White's Turn</h2>
+
+    <div class="board-container" id="board"></div>
+
+    <div class="eval-bar">
+        <div id="evalInner" class="eval-inner"></div>
+    </div>
+
+    <script>
+        const boardEl = document.getElementById('board');
+        const statusEl = document.getElementById('status');
+        const evalInnerEl = document.getElementById('evalInner');
+
+        let turn = 'w';
+        let selectedSquare = null;
+        let validMovesForSelected = [];
+        let gameOver = false;
+
+        const boardState = [
+            ['♜','♞','♝','♛','♚','♝','♞','♜'],
+            ['♟','♟','♟','♟','♟','♟','♟','♟'],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['♙','♙','♙','♙','♙','♙','♙','♙'],
+            ['♖','♘','♗','♕','♔','♗','♘','♖']
+        ];
+
+        const whitePieces = ['♙', '♖', '♘', '♗', '♕', '♔'];
+        const blackPieces = ['♟', '♜', '♞', '♝', '♛', '♚'];
+
+        const pieceValues = {
+            '♙': 1, '♖': 5, '♘': 3, '♗': 3, '♕': 9, '♔': 0,
+            '♟': 1, '♜': 5, '♞': 3, '♝': 3, '♛': 9, '♚': 0
+        };
+
+        function getPieceColor(piece) {
+            if (!piece) return null;
+            return whitePieces.includes(piece) ? 'w' : 'b';
+        }
+
+        function createBoard() {
+            boardEl.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.createElement('div');
+                    square.classList.add('square');
+                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                    square.textContent = boardState[r][c];
+
+                    if (selectedSquare && selectedSquare.row === r && selectedSquare.col === c) {
+                        square.classList.add('selected');
+                    }
+
+                    // Display hint dots for legal moves
+                    const isHint = validMovesForSelected.some(m => m.row === r && m.col === c);
+                    if (isHint && !gameOver) {
+                        const dot = document.createElement('div');
+                        dot.classList.add('dot');
+                        square.appendChild(dot);
+                    }
+
+                    square.addEventListener('click', () => handleSquareClick(r, c));
+                    boardEl.appendChild(square);
+                }
+            }
+        }
+
+        // Generates pseudo-legal moves disregarding check safety
+        function getPseudoMoves(r, c, state) {
+            const piece = state[r][c];
+            const color = getPieceColor(piece);
+            const moves = [];
+
+            if (!piece) return moves;
+
+            const addMove = (nr, nc) => {
+                if (nr < 0 || nr > 7 || nc < 0 || nc > 7) return false;
+                const targetPiece = state[nr][nc];
+                if (!targetPiece) {
+                    moves.push({ row: nr, col: nc });
+                    return true;
+                }
+                if (getPieceColor(targetPiece) !== color) {
+                    moves.push({ row: nr, col: nc });
+                }
+                return false; // Blocked by any piece
+            };
+
+            // Pawn Logic
+            if (piece === '♙' || piece === '♟') {
+                const dir = piece === '♙' ? -1 : 1;
+                const startRow = piece === '♙' ? 6 : 1;
+
+                // Forward 1
+                if (r + dir >= 0 && r + dir <= 7 && !state[r + dir][c]) {
+                    moves.push({ row: r + dir, col: c });
+                    // Forward 2
+                    if (r === startRow && !state[r + 2 * dir][c]) {
+                        moves.push({ row: r + 2 * dir, col: c });
+                    }
+                }
+                // Captures
+                [-1, 1].forEach(dc => {
+                    const nc = c + dc;
+                    const nr = r + dir;
+                    if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7) {
+                        const target = state[nr][nc];
+                        if (target && getPieceColor(target) !== color) {
+                            moves.push({ row: nr, col: nc });
+                        }
+                    }
+                });
+            }
+
+            // Knight Logic
+            if (piece === '♘' || piece === '♞') {
+                const kMoves = [
+                    [-2,-1], [-2,1], [-1,-2], [-1,2],
+                    [1,-2], [1,2], [2,-1], [2,1]
+                ];
+                kMoves.forEach(([dr, dc]) => addMove(r + dr, c + dc));
+            }
+
+            // King Logic
+            if (piece === '♔' || piece === '♚') {
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr !== 0 || dc !== 0) addMove(r + dr, c + dc);
+                    }
+                }
+            }
+
+            // Sliding Pieces: Rook, Bishop, Queen
+            const isRook = piece === '♖' || piece === '♜' || piece === '♕' || piece === '♛';
+            const isBishop = piece === '♗' || piece === '♝' || piece === '♕' || piece === '♛';
+
+            if (isRook) {
+                const dirs = [[-1,0], [1,0], [0,-1], [0,1]];
+                dirs.forEach(([dr, dc]) => {
+                    let step = 1;
+                    while (addMove(r + dr * step, c + dc * step)) { step++; }
+                });
+            }
+
+            if (isBishop) {
+                const dirs = [[-1,-1], [-1,1], [1,-1], [1,1]];
+                dirs.forEach(([dr, dc]) => {
+                    let step = 1;
+                    while (addMove(r + dr * step, c + dc * step)) { step++; }
+                });
+            }
+
+            return moves;
+        }
+
+        function findKing(color, state) {
+            const targetKing = color === 'w' ? '♔' : '♚';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (state[r][c] === targetKing) return { row: r, col: c };
+                }
+            }
+            return null;
+        }
+
+        function isColorInCheck(color, state) {
+            const kingPos = findKing(color, state);
+            if (!kingPos) return false;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = state[r][c];
+                    if (piece && getPieceColor(piece) !== color) {
+                        const moves = getPseudoMoves(r, c, state);
+                        if (moves.some(m => m.row === kingPos.row && m.col === kingPos.col)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Filters out moves that leave or put your own king in check
+        function getLegalMoves(r, c, state) {
+            const pseudo = getPseudoMoves(r, c, state);
+            const color = getPieceColor(state[r][c]);
+
+            return pseudo.filter(m => {
+                // Simulate move
+                const originalTarget = state[m.row][m.col];
+                const originalSource = state[r][c];
+                
+                state[m.row][m.col] = originalSource;
+                state[r][c] = '';
+                
+                const inCheck = isColorInCheck(color, state);
+                
+                // Revert move
+                state[r][c] = originalSource;
+                state[m.row][m.col] = originalTarget;
+                
+                return !inCheck;
+            });
+        }
+
+        function hasAnyLegalMoves(color) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (getPieceColor(boardState[r][c]) === color) {
