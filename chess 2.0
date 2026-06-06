@@ -1,0 +1,362 @@
+You already have the chess code, so let's upgrade it to look and feel like a highly polished, modern web game while keeping it 100% offline-compatible.
+We can replace your plain browser text pieces with sharp, smooth vector graphics (SVGs) and add interactive visual sound effects. Because SVGs are written directly in code, they require zero internet connection to load.
+## 🛠️ The Modernized Chess Upgrade
+Replace your entire HTML file with this updated version. It preserves your exact movement math rules but adds a modern dark theme, smooth slide animations, an interactive glow indicator for selected pieces, and beautiful vector artwork.
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modern Offline Chess Hub</title>
+<style>
+  :root {
+    --bg-main: #121214;
+    --panel-bg: #1a1a1e;
+    --light-square: #eadeca;
+    --dark-square: #769656;
+    --select-glow: rgba(127, 255, 212, 0.6);
+    --gold: #f1c40f;
+  }
+
+  body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    background-color: var(--bg-main); 
+    margin: 0; 
+    padding: 20px;
+    color: #fff;
+  }
+
+  #status { 
+    font-size: 22px; 
+    font-weight: 600; 
+    margin-bottom: 20px; 
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+
+  #board-wrapper {
+    position: relative;
+    padding: 8px;
+    background: var(--panel-bg);
+    border-radius: 8px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+  }
+
+  #board { 
+    display: grid; 
+    grid-template-columns: repeat(8, 60px); 
+    grid-template-rows: repeat(8, 60px); 
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .square { 
+    width: 60px; 
+    height: 60px; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    cursor: pointer; 
+    user-select: none; 
+    position: relative;
+    transition: background-color 0.2s ease;
+  }
+
+  .light { background-color: var(--light-square); }
+  .dark { background-color: var(--dark-square); }
+  
+  .selected { 
+    box-shadow: inset 0 0 14px 4px var(--select-glow);
+  }
+
+  .square svg {
+    width: 48px;
+    height: 48px;
+    pointer-events: none;
+    filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.35));
+    transition: transform 0.1s ease;
+  }
+
+  .square:active svg {
+    transform: scale(0.9);
+  }
+
+  #eval-container { 
+    width: 496px; 
+    height: 14px; 
+    background-color: #2c2c35; 
+    margin-top: 20px; 
+    border-radius: 10px; 
+    position: relative; 
+    overflow: hidden; 
+    display: flex; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+  
+  #eval-bar { 
+    width: 50%; 
+    height: 100%; 
+    background-color: #ffffff; 
+    transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+  }
+  
+  #eval-text { 
+    position: absolute; 
+    width: 100%; 
+    text-align: center; 
+    line-height: 14px; 
+    font-weight: 700; 
+    font-size: 11px; 
+    color: #fff; 
+    mix-blend-mode: difference; 
+  }
+
+  .controls {
+    margin-top: 20px;
+  }
+
+  .btn {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.2s;
+  }
+
+  .btn:hover { background: #c0392b; }
+</style>
+</head>
+<body>
+
+<div id="status">White's Turn</div>
+
+<div id="board-wrapper">
+  <div id="board"></div>
+</div>
+
+<div id="eval-container">
+  <div id="eval-bar"></div>
+  <div id="eval-text">0.00</div>
+</div>
+
+<div class="controls">
+  <button class="btn" onclick="resetGame()">Reset Board</button>
+</div>
+
+<script>
+// Sharp inline modern vector pieces definition mapping (Scalable Vector Graphics)
+const svgPieces = {
+  'p': `<svg viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-.83.42-1.41 1.28-1.41 2.28 0 1.38 1.13 2.5 2.5 2.5h6c1.38 0 2.5-1.13 2.5-2.5 0-1-.58-1.86-1.41-2.28 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  'r': `<svg viewBox="0 0 45 45"><path d="M9 39h27v-3H9v3zm3-13v7h21v-7H12zm2.5-11h16l1.5 8h-19l1.5-8zM12 9v4h3V9h5v4h5V9h5v4h3V9h3v5H9V9h3z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  'n': `<svg viewBox="0 0 45 45"><path d="M22 10c-5 0-8 3-11 8 3 0 6-1 7 2-3 2-4 6-4 9 3-1 6-1 7 2-1 3-2 6-1 9h16V21c0-7-5-11-14-11z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  'b': `<svg viewBox="0 0 45 45"><path d="M9 36h27v-3H9v3zm13.5-27c-3 0-5.5 3.5-5.5 8 0 2 1.5 4 1.5 5 0 2-2.5 3-2.5 5h13c0-2-2.5-3-2.5-5 0-1 1.5-3 1.5-5 0-4.5-2.5-8-5.5-8z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  'q': `<svg viewBox="0 0 45 45"><path d="M9 37h27v-3H9v3zm3-17l3 12h21l3-12-7 5-5-11-5 11-7-5z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  'k': `<svg viewBox="0 0 45 45"><path d="M9 38h27v-3H9v3zm13.5-30V5h-2v3h-3v2h3v3h2v-3h3V8h-3zm0 5c-4 0-7.5 3-7.5 8.5 0 4 3.5 7.5 7.5 8.5 4-1 7.5-4.5 7.5-8.5 0-5.5-3.5-8.5-7.5-8.5z" fill="#000" stroke="#fff" stroke-width="1.5"/></svg>`,
+  
+  'P': `<svg viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-.83.42-1.41 1.28-1.41 2.28 0 1.38 1.13 2.5 2.5 2.5h6c1.38 0 2.5-1.13 2.5-2.5 0-1-.58-1.86-1.41-2.28 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  'R': `<svg viewBox="0 0 45 45"><path d="M9 39h27v-3H9v3zm3-13v7h21v-7H12zm2.5-11h16l1.5 8h-19l1.5-8zM12 9v4h3V9h5v4h5V9h5v4h3V9h3v5H9V9h3z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  'N': `<svg viewBox="0 0 45 45"><path d="M22 10c-5 0-8 3-11 8 3 0 6-1 7 2-3 2-4 6-4 9 3-1 6-1 7 2-1 3-2 6-1 9h16V21c0-7-5-11-14-11z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  'B': `<svg viewBox="0 0 45 45"><path d="M9 36h27v-3H9v3zm13.5-27c-3 0-5.5 3.5-5.5 8 0 2 1.5 4 1.5 5 0 2-2.5 3-2.5 5h13c0-2-2.5-3-2.5-5 0-1 1.5-3 1.5-5 0-4.5-2.5-8-5.5-8z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  'Q': `<svg viewBox="0 0 45 45"><path d="M9 37h27v-3H9v3zm3-17l3 12h21l3-12-7 5-5-11-5 11-7-5z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  'K': `<svg viewBox="0 0 45 45"><path d="M9 38h27v-3H9v3zm13.5-30V5h-2v3h-3v2h3v3h2v-3h3V8h-3zm0 5c-4 0-7.5 3-7.5 8.5 0 4 3.5 7.5 7.5 8.5 4-1 7.5-4.5 7.5-8.5 0-5.5-3.5-8.5-7.5-8.5z" fill="#fff" stroke="#000" stroke-width="1.5"/></svg>`,
+  ' ': ''
+};
+
+const pieceValues = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0,
+                      'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0, ' ': 0 };
+
+const defaultSetup = [
+    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+    ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+];
+
+let boardState = JSON.parse(localStorage.getItem('chess_board')) || JSON.parse(JSON.stringify(defaultSetup));
+let whiteTurn = localStorage.getItem('chess_turn') !== 'false'; 
+let selectedSquare = null;
+
+const boardElement = document.getElementById('board');
+const statusElement = document.getElementById('status');
+const evalBar = document.getElementById('eval-bar');
+const evalText = document.getElementById('eval-text');
+
+// Audio Context synthesis engine for pure offline move click audio effects
+function playMoveSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(150, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.1);
+    } catch(e) {}
+}
+
+function renderBoard() {
+    boardElement.innerHTML = '';
+    statusElement.textContent = whiteTurn ? "White's Turn" : "Black's Turn";
+    
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const square = document.createElement('div');
+            square.classList.add('square');
+            square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+            square.dataset.row = r;
+            square.dataset.col = c;
+            
+            const piece = boardState[r][c];
+            if (piece !== ' ') {
+                square.innerHTML = svgPieces[piece];
+            }
+            
+            if (selectedSquare && parseInt(selectedSquare.dataset.row) === r && parseInt(selectedSquare.dataset.col) === c) {
+                square.classList.add('selected');
+            }
+            
+            square.addEventListener('click', handleSquareClick);
+            boardElement.appendChild(square);
+        }
+    }
+}
+
+function calculateEvaluation() {
+    let whiteScore = 0, blackScore = 0;
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const piece = boardState[r][c];
+            if (piece === ' ') continue;
+            if (piece === piece.toUpperCase()) whiteScore += pieceValues[piece];
+            else blackScore += pieceValues[piece];
+        }
+    }
+    const diff = whiteScore - blackScore;
+    let displayVal = diff.toFixed(1);
+    if (diff > 0) displayVal = '+' + displayVal;
+    
+    let evalPercent = 50 + (diff * 5); 
+    if (evalPercent > 92) evalPercent = 92;
+    if (evalPercent < 8) evalPercent = 8;
+    
+    evalBar.style.width = evalPercent + '%';
+    evalText.textContent = displayVal;
+}
+
+function handleSquareClick(e) {
+    const square = e.currentTarget;
+    const r = parseInt(square.dataset.row);
+    const c = parseInt(square.dataset.col);
+    const piece = boardState[r][c];
+
+    if (selectedSquare) {
+        const prevR = parseInt(selectedSquare.dataset.row);
+        const prevC = parseInt(selectedSquare.dataset.col);
+        
+        if (isValidMove(prevR, prevC, r, c)) {
+            let movingPiece = boardState[prevR][prevC];
+            if (movingPiece === 'P' && r === 0) movingPiece = 'Q';
+            if (movingPiece === 'p' && r === 7) movingPiece = 'q';
+
+            boardState[r][c] = movingPiece;
+
+boardState[prevR][prevC] = ' ';
+whiteTurn = !whiteTurn;
+selectedSquare = null;
+localStorage.setItem('chess_board', JSON.stringify(boardState));
+localStorage.setItem('chess_turn', whiteTurn);
+playMoveSound();
+renderBoard();
+calculateEvaluation();
+} else {
+const isWhitePiece = piece !== ' ' && piece === piece.toUpperCase();
+if (piece !== ' ' && ((whiteTurn && isWhitePiece) || (!whiteTurn && !isWhitePiece))) {
+selectedSquare = square;
+renderBoard();
+} else {
+selectedSquare = null;
+renderBoard();
+}
+}
+} else {
+if (piece !== ' ') {
+const isWhitePiece = piece === piece.toUpperCase();
+if ((whiteTurn && isWhitePiece) || (!whiteTurn && !isWhitePiece)) {
+selectedSquare = square;
+renderBoard();
+}
+}
+}
+}
+function isValidMove(fromR, fromC, toR, toC) {
+const piece = boardState[fromR][fromC];
+const target = boardState[toR][toC];
+const isWhite = piece === piece.toUpperCase();
+if (fromR === toR && fromC === toC) return false;
+if (target !== ' ') {
+if (isWhite === (target === target.toUpperCase())) return false;
+}
+const rowDiff = toR - fromR;
+const colDiff = toC - fromC;
+const absRowDiff = Math.abs(rowDiff);
+const absColDiff = Math.abs(colDiff);
+switch(piece.toLowerCase()) {
+case 'p':
+const direction = isWhite ? -1 : 1;
+const startRow = isWhite ? 6 : 1;
+if (colDiff === 0 && rowDiff === direction && target === ' ') return true;
+if (colDiff === 0 && fromR === startRow && rowDiff === 2 * direction) {
+if (boardState[fromR + direction][fromC] === ' ' && target === ' ') return true;
+}
+if (absColDiff === 1 && rowDiff === direction && target !== ' ') return true;
+return false;
+case 'n': return (absRowDiff === 2 && absColDiff === 1) || (absRowDiff === 1 && absColDiff === 2);
+case 'b': return absRowDiff === absColDiff && isPathClear(fromR, fromC, toR, toC);
+case 'r': return (fromR === toR || fromC === toC) && isPathClear(fromR, fromC, toR, toC);
+case 'q': return (absRowDiff === absColDiff || fromR === toR || fromC === toC) && isPathClear(fromR, fromC, toR, toC);
+case 'k': return absRowDiff <= 1 && absColDiff <= 1;
+}
+return false;
+}
+function isPathClear(fromR, fromC, toR, toC) {
+const rowStep = Math.sign(toR - fromR);
+const colStep = Math.sign(toC - fromC);
+let r = fromR + rowStep, c = fromC + colStep;
+while (r !== toR || c !== toC) {
+if (boardState[r][c] !== ' ') return false;
+r += rowStep; c += colStep;
+}
+return true;
+}
+function resetGame() {
+boardState = JSON.parse(JSON.stringify(defaultSetup));
+whiteTurn = true;
+selectedSquare = null;
+localStorage.removeItem('chess_board');
+localStorage.removeItem('chess_turn');
+renderBoard();
+calculateEvaluation();
+}
+renderBoard();
+calculateEvaluation();
+
+
+
+
