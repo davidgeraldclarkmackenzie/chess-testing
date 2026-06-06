@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Full Rules Chess with Eval Bar</title>
+<style>
+  body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f0f0; margin: 0; padding: 20px; }
+  #status { font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #333; }
+  #board { display: grid; grid-template-columns: repeat(8, 60px); grid-template-rows: repeat(8, 60px); border: 4px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+  .square { width: 60px; height: 60px; display: flex; justify-content: center; align-items: center; font-size: 40px; cursor: pointer; user-select: none; }
+  .light { background-color: #f0d9b5; }
+  .dark { background-color: #b58863; }
+  .selected { background-color: #7fffd4 !important; }
+
+  #eval-container { width: 480px; height: 25px; background-color: #333; margin-top: 15px; border: 2px solid #333; border-radius: 4px; position: relative; overflow: hidden; display: flex; }
+  #eval-bar { width: 50%; height: 100%; background-color: #ffffff; transition: width 0.3s ease; }
+  #eval-text { position: absolute; width: 100%; text-align: center; line-height: 25px; font-weight: bold; font-size: 14px; color: #333; mix-blend-mode: difference; }
+</style>
+</head>
+<body>
+
+<div id="status">White's Turn</div>
+<div id="board"></div>
+
+<div id="eval-container">
+  <div id="eval-bar"></div>
+  <div id="eval-text">0.00</div>
+</div>
+
+<script>
+const pieces = { 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟', 
+                 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙', 
+                 ' ': '' };
+
+const pieceValues = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0,
+                      'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0, ' ': 0 };
+
+let boardState = [
+    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+    ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+];
+
+let selectedSquare = null;
+let whiteTurn = true;
+
+const boardElement = document.getElementById('board');
+const statusElement = document.getElementById('status');
+const evalBar = document.getElementById('eval-bar');
+const evalText = document.getElementById('eval-text');
+
+function renderBoard() {
+    boardElement.innerHTML = '';
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const square = document.createElement('div');
+            square.classList.add('square');
+            square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+            square.dataset.row = r;
+            square.dataset.col = c;
+            
+            const piece = boardState[r][c];
+            square.textContent = pieces[piece];
+            
+            // Re-add selected visual state if applicable
+            if (selectedSquare && parseInt(selectedSquare.dataset.row) === r && parseInt(selectedSquare.dataset.col) === c) {
+                square.classList.add('selected');
+            }
+            
+            square.addEventListener('click', handleSquareClick);
+            boardElement.appendChild(square);
+        }
+    }
+}
+
+function calculateEvaluation() {
+    let whiteScore = 0;
+    let blackScore = 0;
+    
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const piece = boardState[r][c];
+            if (piece === ' ') continue;
+            
+            if (piece === piece.toUpperCase()) {
+                whiteScore += pieceValues[piece];
+            } else {
+                blackScore += pieceValues[piece];
+            }
+        }
+    }
+    
+    const diff = whiteScore - blackScore;
+    let displayVal = diff.toFixed(1);
+
+    if (diff > 0) {
+        displayVal = '+' + displayVal;
+    }
+    
+    // Convert material score to percentage (capped between 10% and 90%)
+    let evalPercent = 50 + (diff * 5); 
+    if (evalPercent > 90) evalPercent = 90;
+    if (evalPercent < 10) evalPercent = 10;
+    
+    evalBar.style.width = evalPercent + '%';
+    evalText.textContent = displayVal;
+}
+
+function handleSquareClick(e) {
+    const square = e.currentTarget;
+    const r = parseInt(square.dataset.row);
+    const c = parseInt(square.dataset.col);
+    const piece = boardState[r][c];
+
+    if (selectedSquare) {
+        const prevR = parseInt(selectedSquare.dataset.row);
+        const prevC = parseInt(selectedSquare.dataset.col);
+        
+        if (isValidMove(prevR, prevC, r, c)) {
+            boardState[r][c] = boardState[prevR][prevC];
+            boardState[prevR][prevC] = ' ';
+            
+            whiteTurn = !whiteTurn;
+            statusElement.textContent = whiteTurn ? "White's Turn" : "Black's Turn";
+            calculateEvaluation();
+            selectedSquare = null;
+            renderBoard();
+        } else {
+            // Re-clicking your own piece switches selection; clicking invalid empty square deselects
+            const isWhitePiece = piece !== ' ' && piece === piece.toUpperCase();
+            if (piece !== ' ' && ((whiteTurn && isWhitePiece) || (!whiteTurn && !isWhitePiece))) {
+                selectedSquare = square;
+                renderBoard();
+            } else {
+                selectedSquare = null;
+                renderBoard();
+            }
+        }
+    } else {
+        if (piece !== ' ') {
+            const isWhitePiece = piece === piece.toUpperCase();
+            if ((whiteTurn && isWhitePiece) || (!whiteTurn && !isWhitePiece)) {
+                selectedSquare = square;
+                renderBoard();
+            }
+        }
+    }
+}
+
+function isValidMove(fromR, fromC, toR, toC) {
+    const piece = boardState[fromR][fromC];
+    const target = boardState[toR][toC];
+    const isWhite = piece === piece.toUpperCase();
+    
+    if (fromR === toR && fromC === toC) return false;
+    if (target !== ' ') {
+        const targetWhite = target === target.toUpperCase();
+        if (isWhite === targetWhite) return false;
+    }
+
+    const rowDiff = toR - fromR;
+    const colDiff = toC - fromC;
+    const absRowDiff = Math.abs(rowDiff);
+    const absColDiff = Math.abs(colDiff);
+
+    switch(piece.toLowerCase()) {
+        case 'p': // Pawn rules
+            const direction = isWhite ? -1 : 1;
+            const startRow = isWhite ? 6 : 1;
+            
+            if (colDiff === 0 && rowDiff === direction && target === ' ') return true;
+            if (colDiff === 0 && fromR === startRow && rowDiff === 2 * direction) {
+                if (boardState[fromR + direction][fromC] === ' ' && target === ' ') return true;
+            }
+            if (absColDiff === 1 && rowDiff === direction && target !== ' ') return true;
+            return false;
+
+        case 'n': // Knight rules
+            return (absRowDiff === 2 && absColDiff === 1) || (absRowDiff === 1 && absColDiff === 2);
+
+        case 'b': // Bishop rules
+            if (absRowDiff !== absColDiff) return false;
+            return isPathClear(fromR, fromC, toR, toC);
+
+        case 'r': // Rook rules
+            if (fromR !== toR && fromC !== toC) return false;
+            return isPathClear(fromR, fromC, toR, toC);
+
+        case 'q': // Queen rules
+            if (absRowDiff !== absColDiff && fromR !== toR && fromC !== toC) return false;
+            return isPathClear(fromR, fromC, toR, toC);
+
+        case 'k': // King rules
+            return absRowDiff <= 1 && absColDiff <= 1;
+    }
+    return false;
+}
+
+function isPathClear(fromR, fromC, toR, toC) {
+    const rowStep = Math.sign(toR - fromR);
+    const colStep = Math.sign(toC - fromC);
+    let r = fromR + rowStep;
+    let c = fromC + colStep;
+    
+    while (r !== toR || c !== toC) {
+        if (boardState[r][c] !== ' ') return false;
+        r += rowStep;
+        c += colStep;
+    }
+    return true;
+}
+
+renderBoard();
+calculateEvaluation();
+</script>
+</body>
+</html>
