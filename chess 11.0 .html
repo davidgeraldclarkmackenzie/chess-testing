@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%;
+  font-family: Arial, sans-serif;
+  background: #2d5a1b;
+  background-image: repeating-linear-gradient(-45deg, #2d5a1b 0px, #2d5a1b 20px, #1e3d10 20px, #1e3d10 40px);
+  display: flex; justify-content: center; align-items: center; overflow: hidden;
+}
+#app {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: #f0ead6; border: 4px solid #3a3a3a;
+  padding: 10px 14px 12px; width: fit-content;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+h1 {
+  font-size: 1.4rem; font-weight: 900;
+  color: #3a6b20;
+  font-family: Impact, Arial Black, sans-serif; text-transform: uppercase;
+  letter-spacing: 2px;
+}
+#msg { font-size: 13px; font-weight: 700; color: #c00; min-height: 18px; text-transform: uppercase; }
+#status { font-size: 12px; color: #333; min-height: 16px; font-weight: 600; }
+#board-wrap { display: flex; gap: 4px; align-items: flex-start; }
+#board { display: grid; grid-template-columns: repeat(8, 1fr); border: 3px solid #3a3a3a; }
+.sq {
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; position: relative; user-select: none;
+}
+.sq.light { background: #eeecd0; }
+.sq.dark  { background: #6ca640; }
+.sq svg { width: 90%; height: 90%; display: block; pointer-events: none; }
+.sq.selected { outline: 4px solid #f6d32d; outline-offset: -4px; }
+.sq.movable::after {
+  content: ''; position: absolute;
+  width: 32%; height: 32%; border-radius: 50%;
+  background: rgba(0,0,0,0.20); pointer-events: none;
+  top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1;
+}
+.sq.capture::after {
+  content: ''; position: absolute; inset: 0;
+  border-radius: 50%; box-shadow: inset 0 0 0 6px rgba(0,0,0,0.22);
+  pointer-events: none; z-index: 1;
+}
+.sq.check { background: #ff4444 !important; }
+#files { display: flex; }
+.file-label { text-align: center; font-size: 11px; color: #555; padding-top: 3px; font-weight: 700; }
+#ranks { display: flex; flex-direction: column; justify-content: space-around; }
+.rank-label { font-size: 11px; color: #555; width: 14px; text-align: right; font-weight: 700; }
+#controls { display: flex; gap: 8px; }
+button {
+  background: #4a7a28; color: #fff; border: 2px solid #2d5a1b;
+  padding: 6px 18px; cursor: pointer; font-size: 12px;
+  font-family: Impact, Arial Black, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 4px;
+}
+button:hover { background: #3a6b20; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>♟ CHESS</h1>
+  <div id="msg"></div>
+  <div id="status">White to move</div>
+  <div id="board-wrap">
+    <div id="ranks"></div>
+    <div>
+      <div id="board"></div>
+      <div id="files"></div>
+    </div>
+  </div>
+  <div id="controls">
+    <button onclick="resetGame()">New Game</button>
+    <button onclick="undoMove()">Undo</button>
+    <button onclick="togglePicker()">Board Colors</button>
+  </div>
+  <div id="picker" style="display:none; flex-direction:column; gap:6px; margin-top:4px; background:#e8e2cc; border:2px solid #3a3a3a; padding:8px 10px;">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-size:11px; font-weight:700; color:#333; width:52px;">LIGHT</span>
+      <div id="light-swatches" style="display:flex; gap:4px;"></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-size:11px; font-weight:700; color:#333; width:52px;">DARK</span>
+      <div id="dark-swatches" style="display:flex; gap:4px;"></div>
+    </div>
+  </div>
+</div>
+<script>
+// Cartoon/app-style pieces matching the screenshot:
+// White = white fill + light gray shading + dark outline
+// Black = dark charcoal fill + dark outline (near-silhouette with subtle detail)
+function makePiece(t, w) {
+  const ol  = '#2a2a2a';   // outline color
+  const sw  = 3.5;         // stroke-width
+  // white piece colors
+  const wf  = '#ffffff';   // white fill
+  const wsh = '#c8c8c8';   // white shadow/shade areas
+  const wm  = '#e8e8e8';   // white mid-tone
+  // black piece colors
+  const bf  = '#3a3a3a';   // black fill (dark charcoal)
+  const bsh = '#222222';   // black shadow
+  const bhi = '#555555';   // black highlight
+
+  const f   = w ? wf  : bf;
+  const sh  = w ? wsh : bsh;
+  const mid = w ? wm  : bhi;
+
+  const pieces = {
+    // PAWN — single unified path so the outline is complete all the way around
+    P: `<g stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round">
+      <path d="
+        M50,22
+        C42,22 36,28 36,36
+        C36,42 40,47 46,49
+        L44,52
+        C40,53 36,56 34,60
+        L32,78
+        L68,78
+        L66,60
+        C64,56 60,53 56,52
+        L54,49
+        C60,47 64,42 64,36
+        C64,28 58,22 50,22 Z
+      " fill="${f}"/>
+      <rect x="32" y="78" width="36" height="8" rx="3" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <circle cx="50" cy="36" r="9" fill="${mid}" stroke="none"/>
+      <ellipse cx="46" cy="33" rx="3.5" ry="2.5" fill="${w?'#fff':'#666'}" stroke="none" opacity="0.5"/>
+    </g>`,
+
+    // ROOK — precisely traced from screenshot
+    R: `<g stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round">
+      <path d="
+        M50,86 Q30,86 28,78 Q27,72 32,70
+        Q30,68 30,64 Q30,56 34,52
+        L34,44 L36,44 L36,32 L44,32 L44,44 L47,44 L47,32 L53,32 L53,44 L56,44 L56,32 L64,32 L64,44 L66,44
+        L66,52 Q70,56 70,64 Q70,68 68,70
+        Q73,72 72,78 Q70,86 50,86 Z
+      " fill="${f}"/>
+      <line x1="34" y1="44" x2="66" y2="44" stroke="${sh}" stroke-width="2"/>
+      <path d="M58,52 Q64,58 66,68 Q67,72 66,76" fill="none" stroke="${sh}" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
+    </g>`,
+
+    // KNIGHT
+    N: `<g>
+      <ellipse cx="50" cy="83" rx="21" ry="5" fill="${sh}" stroke="${ol}" stroke-width="1.5"/>
+      <path d="M31,82 Q30,72 34,68 L36,68 Q32,74 33,78 L67,78 Q66,72 62,68 Q58,62 56,56 Q60,52 64,46 Q67,40 65,34 Q62,26 54,22 Q46,18 38,22 Q30,26 30,34 Q30,42 36,48 Q32,54 31,62 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <path d="M38,22 Q36,30 38,36 Q42,42 48,42 Q54,40 56,34 Q58,28 54,22" fill="${mid}" stroke="none"/>
+      <circle cx="42" cy="30" r="4" fill="${sh}" stroke="${ol}" stroke-width="1.5"/>
+      <circle cx="41" cy="29" r="2" fill="${ol}" stroke="none"/>
+      <path d="M36,48 Q42,44 48,46 Q52,48 52,54" fill="none" stroke="${sh}" stroke-width="2" stroke-linecap="round"/>
+      <path d="M56,22 Q60,18 65,17 Q63,22 62,26" fill="${f}" stroke="${ol}" stroke-width="2"/>
+      <ellipse cx="43" cy="25" rx="4" ry="3" fill="${w?'#fff':'#666'}" stroke="none" opacity="0.4"/>
+    </g>`,
+
+    // BISHOP
+    B: `<g>
+      <ellipse cx="50" cy="83" rx="21" ry="5" fill="${sh}" stroke="${ol}" stroke-width="1.5"/>
+      <path d="M31,82 Q30,72 35,68 L37,68 Q33,74 34,78 L66,78 Q67,74 63,68 L65,68 Q70,72 69,82 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <rect x="34" y="64" width="32" height="8" rx="4" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <path d="M38,64 Q36,54 38,44 Q40,32 50,20 Q60,32 62,44 Q64,54 62,64 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <path d="M44,36 Q42,44 44,52 Q47,58 50,58 Q53,58 56,52 Q58,44 56,36 Q53,28 50,22 Q47,28 44,36 Z" fill="${mid}" stroke="none"/>
+      <circle cx="50" cy="16" r="6" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <line x1="44" y1="46" x2="56" y2="46" stroke="${sh}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="50" y1="40" x2="50" y2="52" stroke="${sh}" stroke-width="2.5" stroke-linecap="round"/>
+      <ellipse cx="47" cy="30" rx="3" ry="2.5" fill="${w?'#fff':'#666'}" stroke="none" opacity="0.5"/>
+    </g>`,
+
+    // QUEEN
+    Q: `<g>
+      <ellipse cx="50" cy="83" rx="23" ry="5" fill="${sh}" stroke="${ol}" stroke-width="1.5"/>
+      <path d="M27,80 Q26,72 30,68 L30,58 Q26,56 24,52 Q24,46 28,44 L34,32 L42,52 L48,30 L50,46 L52,30 L58,52 L66,32 L72,44 Q76,46 76,52 Q74,56 70,58 L70,68 Q74,72 73,80 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <line x1="27" y1="68" x2="73" y2="68" stroke="${sh}" stroke-width="2"/>
+      <line x1="29" y1="58" x2="71" y2="58" stroke="${sh}" stroke-width="2"/>
+      <circle cx="24" cy="52" r="7" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <circle cx="36" cy="28" r="7" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <circle cx="50" cy="24" r="7" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <circle cx="64" cy="28" r="7" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <circle cx="76" cy="52" r="7" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <path d="M30,68 Q36,62 50,60 Q64,62 70,68" fill="${mid}" stroke="none"/>
+      <ellipse cx="44" cy="44" rx="5" ry="3" fill="${w?'#fff':'#666'}" stroke="none" opacity="0.4"/>
+    </g>`,
+
+    // KING
+    K: `<g>
+      <ellipse cx="50" cy="83" rx="23" ry="5" fill="${sh}" stroke="${ol}" stroke-width="1.5"/>
+      <path d="M27,80 Q26,72 30,68 L30,58 Q26,56 26,52 L74,52 Q74,56 70,58 L70,68 Q74,72 73,80 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <path d="M30,52 Q30,42 36,37 Q42,32 50,32 Q58,32 64,37 Q70,42 70,52 Z" fill="${f}" stroke="${ol}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <line x1="26" y1="62" x2="74" y2="62" stroke="${sh}" stroke-width="2"/>
+      <line x1="28" y1="52" x2="72" y2="52" stroke="${sh}" stroke-width="2"/>
+      <rect x="46" y="10" width="8" height="28" rx="3.5" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <rect x="37" y="17" width="26" height="8" rx="3.5" fill="${f}" stroke="${ol}" stroke-width="${sw}"/>
+      <path d="M34,52 Q34,44 38,40 Q44,35 50,35 Q56,35 62,40 Q66,44 66,52" fill="${mid}" stroke="none"/>
+      <ellipse cx="45" cy="43" rx="5" ry="3" fill="${w?'#fff':'#666'}" stroke="none" opacity="0.4"/>
+    </g>`
+  };
+
+  return `<svg viewBox="0 0 100 90" xmlns="http://www.w3.org/2000/svg">${pieces[t]}</svg>`;
+}
+
+function initBoard() {
+  return [
+    ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+    ['bP','bP','bP','bP','bP','bP','bP','bP'],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    ['wP','wP','wP','wP','wP','wP','wP','wP'],
+    ['wR','wN','wB','wQ','wK','wB','wN','wR']
+  ];
+}
+
+let board, turn, selected, history, castleRights, enPassant, gameOver, highlightMoves;
+function color(p) { return p ? p[0] : null; }
+function type(p)  { return p ? p[1] : null; }
+function opponent(c) { return c === 'w' ? 'b' : 'w'; }
+function inBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+
+function rawMoves(b, r, c, ep) {
+  const p = b[r][c]; if (!p) return [];
+  const col = color(p), t = type(p), moves = [];
+  const add = (nr, nc, promo) => { if (inBounds(nr, nc)) moves.push([nr, nc, promo || false]); };
+  if (t === 'P') {
+    const dir = col==='w'?-1:1, start = col==='w'?6:1;
+    if (inBounds(r+dir,c) && !b[r+dir][c]) {
+      if (r+dir===0||r+dir===7) ['Q','R','B','N'].forEach(q=>add(r+dir,c,q));
+      else add(r+dir,c);
+      if (r===start && !b[r+2*dir][c]) add(r+2*dir,c);
+    }
+    [-1,1].forEach(dc => {
+      if (inBounds(r+dir,c+dc)) {
+        if (b[r+dir][c+dc] && color(b[r+dir][c+dc])!==col) {
+          if (r+dir===0||r+dir===7) ['Q','R','B','N'].forEach(q=>add(r+dir,c+dc,q));
+          else add(r+dir,c+dc);
+        }
+        if (ep && ep[0]===r+dir && ep[1]===c+dc) add(r+dir,c+dc);
+      }
+    });
+  } else if (t==='N') {
+    [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]].forEach(([dr,dc])=>{
+      const nr=r+dr,nc=c+dc; if(inBounds(nr,nc)&&color(b[nr][nc])!==col) add(nr,nc);
+    });
+  } else if (t==='K') {
+    [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]].forEach(([dr,dc])=>{
+      const nr=r+dr,nc=c+dc; if(inBounds(nr,nc)&&color(b[nr][nc])!==col) add(nr,nc);
+    });
+  } else {
+    const dirs = t==='R'?[[0,1],[0,-1],[1,0],[-1,0]]:t==='B'?[[1,1],[1,-1],[-1,1],[-1,-1]]:[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+    dirs.forEach(([dr,dc])=>{
+      let nr=r+dr,nc=c+dc;
+      while(inBounds(nr,nc)){ if(b[nr][nc]){if(color(b[nr][nc])!==col)add(nr,nc);break;} add(nr,nc);nr+=dr;nc+=dc; }
+    });
+  }
+  return moves;
+}
+
+function isAttacked(b,r,c,byColor){
+  for(let i=0;i<8;i++) for(let j=0;j<8;j++)
+    if(color(b[i][j])===byColor && rawMoves(b,i,j,null).some(([nr,nc])=>nr===r&&nc===c)) return true;
+  return false;
+}
+function findKing(b,col){ for(let i=0;i<8;i++) for(let j=0;j<8;j++) if(b[i][j]===col+'K') return [i,j]; return null; }
+
+function applyMove(b,r,c,nr,nc,promo,ep){
+  const nb=b.map(row=>[...row]); const p=nb[r][c],t=type(p),col=color(p); let newEp=null;
+  if(t==='P'&&ep&&nr===ep[0]&&nc===ep[1]) nb[r][nc]=null;
+  if(t==='K'&&Math.abs(nc-c)===2){ if(nc>c){nb[nr][5]=nb[nr][7];nb[nr][7]=null;}else{nb[nr][3]=nb[nr][0];nb[nr][0]=null;} }
+  nb[nr][nc]=promo?col+promo:p; nb[r][c]=null;
+  if(t==='P'&&Math.abs(nr-r)===2) newEp=[r+(nr-r)/2,c];
+  return [nb,newEp];
+}
+
+function legalMoves(b,r,c,ep,cr){
+  const p=b[r][c]; if(!p) return [];
+  const col=color(p),t=type(p),opp=opponent(col);
+  let moves=rawMoves(b,r,c,ep);
+  if(t==='K'){
+    const row=col==='w'?7:0;
+    if(r===row&&c===4){
+      if(cr[col].k&&!b[row][5]&&!b[row][6]&&!isAttacked(b,row,4,opp)&&!isAttacked(b,row,5,opp)&&!isAttacked(b,row,6,opp)) moves.push([row,6,false]);
+      if(cr[col].q&&!b[row][3]&&!b[row][2]&&!b[row][1]&&!isAttacked(b,row,4,opp)&&!isAttacked(b,row,3,opp)&&!isAttacked(b,row,2,opp)) moves.push([row,2,false]);
+    }
+  }
+  return moves.filter(([nr,nc,promo])=>{ const [nb]=applyMove(b,r,c,nr,nc,promo,ep); const [kr,kc]=findKing(nb,col); return !isAttacked(nb,kr,kc,opp); });
+}
+
+function allLegalMoves(b,col,ep,cr){
+  const moves=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(color(b[r][c])===col) legalMoves(b,r,c,ep,cr).forEach(m=>moves.push([r,c,...m]));
+  return moves;
+}
+function isInCheck(b,col){ const [kr,kc]=findKing(b,col); return isAttacked(b,kr,kc,opponent(col)); }
+
+const LIGHT_COLORS = ['#eeecd0','#f0d9b5','#fffde7','#e8f5e9','#e3f2fd','#fce4ec','#f3e5f5','#fff3e0','#e0f7fa','#fafafa'];
+const DARK_COLORS  = ['#6ca640','#b58863','#8bc34a','#4caf50','#1976d2','#e91e63','#9c27b0','#ff9800','#00bcd4','#607d8b'];
+let lightIdx=0, darkIdx=0;
+
+function togglePicker(){
+  const p=document.getElementById('picker');
+  p.style.display=p.style.display==='none'?'flex':'none';
+}
+
+function buildSwatches(){
+  const ls=document.getElementById('light-swatches');
+  const ds=document.getElementById('dark-swatches');
+  LIGHT_COLORS.forEach((c,i)=>{
+    const s=document.createElement('div');
+    s.style.cssText=`width:18px;height:18px;background:${c};border:2px solid ${i===lightIdx?'#2a2a2a':'transparent'};cursor:pointer;border-radius:2px;`;
+    s.onclick=()=>{lightIdx=i;applyColors();buildSwatches();};
+    ls.appendChild(s);
+  });
+  DARK_COLORS.forEach((c,i)=>{
+    const s=document.createElement('div');
+    s.style.cssText=`width:18px;height:18px;background:${c};border:2px solid ${i===darkIdx?'#2a2a2a':'transparent'};cursor:pointer;border-radius:2px;`;
+    s.onclick=()=>{darkIdx=i;applyColors();buildSwatches();};
+    ds.appendChild(s);
+  });
+}
+
+function applyColors(){
+  document.querySelectorAll('.sq.light').forEach(el=>el.style.background=LIGHT_COLORS[lightIdx]);
+  document.querySelectorAll('.sq.dark').forEach(el=>el.style.background=DARK_COLORS[darkIdx]);
+}
+
+function resetGame(){
+  board=initBoard(); turn='w'; selected=null; highlightMoves=[]; history=[];
+  castleRights={w:{k:true,q:true},b:{k:true,q:true}}; enPassant=null; gameOver=false;
+  document.getElementById('msg').textContent=''; render(); resize();
+}
+
+function render(){
+  const boardEl=document.getElementById('board'); boardEl.innerHTML='';
+  const [kr,kc]=findKing(board,turn)||[-1,-1]; const inCheck=isInCheck(board,turn);
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const sq=document.createElement('div');
+    sq.className='sq '+((r+c)%2===0?'light':'dark');
+    const p=board[r][c];
+    if(p){ sq.innerHTML=makePiece(type(p), color(p)==='w'); }
+    if(selected&&selected[0]===r&&selected[1]===c) sq.classList.add('selected');
+    const isMove=highlightMoves.find(([nr,nc])=>nr===r&&nc===c);
+    if(isMove){ if(p&&color(p)!==turn) sq.classList.add('capture'); else sq.classList.add('movable'); }
+    if(inCheck&&r===kr&&c===kc) sq.classList.add('check');
+    sq.onclick=()=>handleClick(r,c);
+    boardEl.appendChild(sq);
+  }
+  const ranksEl=document.getElementById('ranks'); ranksEl.innerHTML='';
+  for(let r=0;r<8;r++){ const d=document.createElement('div'); d.className='rank-label'; d.textContent=8-r; ranksEl.appendChild(d); }
+  const filesEl=document.getElementById('files'); filesEl.innerHTML='';
+  'abcdefgh'.split('').forEach(f=>{ const d=document.createElement('div'); d.className='file-label'; d.textContent=f; filesEl.appendChild(d); });
+  document.getElementById('status').textContent=gameOver?'':(turn==='w'?'White':'Black')+' to move'+(inCheck?' — in check!':'');
+  applyColors();
+}
+
+function handleClick(r,c){
+  if(gameOver) return;
+  const p=board[r][c];
+  if(selected){
+    const [sr,sc]=selected;
+    const move=highlightMoves.find(([nr,nc])=>nr===r&&nc===c);
+    if(move){
+      const [nr,nc,promo]=move;
+      const finalPromo=promo||(type(board[sr][sc])==='P'&&(nr===0||nr===7)?'Q':false);
+      history.push({board:board.map(row=>[...row]),turn,castleRights:JSON.parse(JSON.stringify(castleRights)),enPassant});
+      const [nb,newEp]=applyMove(board,sr,sc,nr,nc,finalPromo,enPassant);
+      board=nb; enPassant=newEp;
+      if(board[nr][nc]==='wK'){castleRights.w.k=false;castleRights.w.q=false;}
+      if(board[nr][nc]==='bK'){castleRights.b.k=false;castleRights.b.q=false;}
+      if(sr===7&&sc===0)castleRights.w.q=false; if(sr===7&&sc===7)castleRights.w.k=false;
+      if(sr===0&&sc===0)castleRights.b.q=false; if(sr===0&&sc===7)castleRights.b.k=false;
+      turn=opponent(turn); selected=null; highlightMoves=[];
+      checkGameOver(); render(); resize(); return;
+    }
+    selected=null; highlightMoves=[];
+  }
+  if(p&&color(p)===turn){ selected=[r,c]; highlightMoves=legalMoves(board,r,c,enPassant,castleRights); }
+  render(); resize();
+}
+
+function checkGameOver(){
+  const moves=allLegalMoves(board,turn,enPassant,castleRights);
+  if(moves.length===0){ gameOver=true; const inCheck=isInCheck(board,turn);
+    document.getElementById('msg').textContent=inCheck?(turn==='w'?'Black':'White')+' wins by checkmate!':'Stalemate — draw!';
+    document.getElementById('status').textContent=''; }
+}
+
+function undoMove(){
+  if(history.length===0) return;
+  const prev=history.pop(); board=prev.board; turn=prev.turn; castleRights=prev.castleRights; enPassant=prev.enPassant;
+  gameOver=false; selected=null; highlightMoves=[]; document.getElementById('msg').textContent=''; render(); resize();
+}
+
+function resize(){
+  const pad=80, uiH=130;
+  const maxSize=Math.min(window.innerWidth-pad, window.innerHeight-uiH);
+  const sq=Math.floor(maxSize/8), boardSize=sq*8;
+  document.getElementById('board').style.width=boardSize+'px';
+  document.getElementById('board').style.height=boardSize+'px';
+  document.getElementById('files').style.width=boardSize+'px';
+  document.getElementById('ranks').style.height=boardSize+'px';
+  document.querySelectorAll('.sq').forEach(el=>{ el.style.width=sq+'px'; el.style.height=sq+'px'; });
+  document.querySelectorAll('.file-label').forEach(el=>el.style.width=sq+'px');
+}
+window.addEventListener('resize',()=>{ render(); resize(); });
+resetGame();
+buildSwatches();
+</script>
+</body>
+</html>
