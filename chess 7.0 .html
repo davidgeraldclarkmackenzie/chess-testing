@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Responsive Chess Engine</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #1e1e24;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+        }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #2a2b36;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            max-width: 100%;
+        }
+        h2 {
+            margin: 0 0 15px 0;
+            font-size: 22px;
+            letter-spacing: 0.5px;
+        }
+        .captured-box {
+            display: flex;
+            gap: 4px;
+            height: 35px;
+            font-size: 24px;
+            align-items: center;
+            width: 480px;
+            max-width: 90vw;
+            color: #ccc;
+        }
+        .board-container {
+            width: 480px;
+            height: 480px;
+            max-width: 90vw;
+            max-height: 90vw;
+            border: 4px solid #34364c;
+            border-radius: 6px;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            overflow: hidden;
+            position: relative;
+        }
+        .square {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(24px, 7vw, 42px);
+            user-select: none;
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.15s ease;
+        }
+        .light { background-color: #f0d9b5; color: #b58863; }
+        .dark { background-color: #b58863; color: #f0d9b5; }
+        
+        /* Modernized Overlay Highlights */
+        .selected { background-color: #7ab874 !important; }
+        .in-check { background-color: #e66a6a !important; }
+        
+        .dot {
+            width: 25%;
+            height: 25%;
+            background-color: rgba(40, 180, 90, 0.5);
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+        }
+        .capture-ring {
+            width: 80%;
+            height: 80%;
+            border: 4px solid rgba(230, 90, 90, 0.4);
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+        }
+        
+        .eval-bar {
+            width: 480px;
+            max-width: 90vw;
+            height: 16px;
+            background-color: #111;
+            margin-top: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            display: flex;
+            overflow: hidden;
+        }
+        .eval-inner {
+            width: 50%;
+            height: 100%;
+            background-color: #fff;
+            transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .btn-reset {
+            margin-top: 15px;
+            background: #4a5568;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn-reset:hover { background: #718096; }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h2 id="status">White's Turn</h2>
+        
+        <!-- Black Captured Pieces Container -->
+        <div id="capturedBlack" class="captured-box"></div>
+        
+        <div class="board-container" id="board"></div>
+        
+        <!-- White Captured Pieces Container -->
+        <div id="capturedWhite" class="captured-box"></div>
+
+        <div class="eval-bar">
+            <div id="evalInner" class="eval-inner"></div>
+        </div>
+        
+        <button class="btn-reset" onclick="resetGame()">Reset Match</button>
+    </div>
+
+    <script>
+        const boardEl = document.getElementById('board');
+        const statusEl = document.getElementById('status');
+        const evalInnerEl = document.getElementById('evalInner');
+        const capWhiteEl = document.getElementById('capturedWhite');
+        const capBlackEl = document.getElementById('capturedBlack');
+
+        let turn = 'w';
+        let selectedSquare = null;
+        let validMovesForSelected = [];
+        let gameOver = false;
+        let capturedWhite = [];
+        let capturedBlack = [];
+
+        let boardState = [];
+
+        const whitePieces = ['♙', '♖', '♘', '♗', '♕', '♔'];
+        const blackPieces = ['♟', '♜', '♞', '♝', '♛', '♚'];
+
+        const pieceValues = {
+            '♙': 1, '♖': 5, '♘': 3, '♗': 3, '♕': 9, '♔': 0,
+            '♟': 1, '♜': 5, '♞': 3, '♝': 3, '♛': 9, '♚': 0
+        };
+
+        function resetGame() {
+            boardState = [
+                ['♜','♞','♝','♛','♚','♝','♞','♜'],
+                ['♟','♟','♟','♟','♟','♟','♟','♟'],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['♙','♙','♙','♙','♙','♙','♙','♙'],
+                ['♖','♘','♗','♕','♔','♗','♘','♖']
+            ];
+            turn = 'w';
+            selectedSquare = null;
+            validMovesForSelected = [];
+            capturedWhite = [];
+            capturedBlack = [];
+            gameOver = false;
+            statusEl.textContent = "White's Turn";
+            updateEvaluation();
+            createBoard();
+        }
+
+        function getPieceColor(piece) {
+            if (!piece) return null;
+            return whitePieces.includes(piece) ? 'w' : 'b';
+        }
+
+        function createBoard() {
+            boardEl.innerHTML = '';
+            const whiteCheck = isColorInCheck('w', boardState);
+            const blackCheck = isColorInCheck('b', boardState);
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.createElement('div');
+                    square.classList.add('square');
+                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                    
+                    const piece = boardState[r][c];
+                    square.textContent = piece;
+
+                    // Selection Highlights
+                    if (selectedSquare && selectedSquare.row === r && selectedSquare.col === c) {
+                        square.classList.add('selected');
+                    }
+
+                    // King Danger Red Highlights
+                    if (piece === '♔' && whiteCheck) square.classList.add('in-check');
+                    if (piece === '♚' && blackCheck) square.classList.add('in-check');
+
+                    // Draw Destination Target Hints
+                    const isHint = validMovesForSelected.find(m => m.row === r && m.col === c);
+                    if (isHint && !gameOver) {
+                        const hint = document.createElement('div');
+                        if (piece === '') {
+                            hint.classList.add('dot');
+                        } else {
+                            hint.classList.add('capture-ring');
+                        }
+                        square.appendChild(hint);
+                    }
+
+                    square.addEventListener('click', () => handleSquareClick(r, c));
+                    boardEl.appendChild(square);
+                }
+            }
+            
+            // Render Graveyard Display Icons
+            capWhiteEl.textContent = capturedWhite.join(' ');
+            capBlackEl.textContent = capturedBlack.join(' ');
+        }
+
+        function getPseudoMoves(r, c, state) {
+            const piece = state[r][c];
+            const color = getPieceColor(piece);
+            const moves = [];
+
+            if (!piece) return moves;
+
+            const addMove = (nr, nc) => {
+                if (nr < 0 || nr > 7 || nc < 0 || nc > 7) return 'stop';
+                const targetPiece = state[nr][nc];
+                if (!targetPiece) {
+                    moves.push({ row: nr, col: nc });
+                    return 'continue';
+                }
+                if (getPieceColor(targetPiece) !== color) {
+                    moves.push({ row: nr, col: nc });
+                }
+                return 'stop';
+            };
+
+            // Enhanced Directional Pawn Mechanics
+            if (piece === '♙' || piece === '♟') {
+                const dir = piece === '♙' ? -1 : 1;
+                const startRow = piece === '♙' ? 6 : 1;
+
+                if (r + dir >= 0 && r + dir <= 7 && !state[r + dir][c]) {
+                    moves.push({ row: r + dir, col: c });
+                    if (r === startRow && !state[r + 2 * dir][c]) {
+                        moves.push({ row: r + 2 * dir, col: c });
+                    }
+                }
+                [-1, 1].forEach(dc => {
+                    const nc = c + dc;
+                    const nr = r + dir;
+                    if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7) {
+                        const target = state[nr][nc];
+                        if (target && getPieceColor(target) !== color) {
+                            moves.push({ row: nr, col: nc });
+                        }
+                    }
+                });
+            }
+
+            // Fixed Knight Offsets Map
+            if (piece === '♘' || piece === '♞') {
+                const kMoves = [
+                    [-2,-1], [-2,1], [-1,-2], [-1,2],
+                    [1,-2], [1,2], [2,-1], [2,1]
+                ];
+                kMoves.forEach(([dr, dc]) => addMove(r + dr, c + dc));
+            }
+
